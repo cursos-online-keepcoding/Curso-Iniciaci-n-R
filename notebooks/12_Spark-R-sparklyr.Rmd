@@ -1,0 +1,82 @@
+---
+title: "Spark y R"
+output: html_notebook
+---
+
+La forma más facil de usar spark en R es mediante la librería sparklyr:
+https://spark.rstudio.com/
+
+SparklyR te permite instalar spark de forma transparente:
+spark_install(version = "3.1")
+
+```{r}
+library(sparklyr)
+sc <- spark_connect(master = "local")
+```
+
+
+```{r}
+library(dplyr)
+file_name<-'../material_adicional/datasets/actividad_deportiva.csv'
+df_activity_raw <- read.csv(file_name, stringsAsFactors = T)
+df_activity_tbl <- copy_to(sc, df_activity_raw)
+```
+
+Para ver las tablas definidas en el entorno Spark:
+```{r}
+dplyr::src_tbls(sc)
+```
+
+Las funciones de Hive se describen aquí:
+https://spark.rstudio.com/dplyr/#hive-functions
+
+Los patrones de fecha son diferentes:
+https://spark.apache.org/docs/latest/sql-ref-datetime-pattern.html
+
+```{r}
+library(lubridate)
+Sys.setlocale("LC_TIME", "C")
+
+df_activity <- df_activity_tbl %>% 
+  select(Activity_Date,Activity_Name,Activity_Type,Elapsed_Time,Distance,Max_Speed,Elevation_Gain,Elevation_Low) %>%
+  mutate(Activity_Date=to_timestamp(Activity_Date,'LLL d, yyyy, K:mm:ss a'),
+         Elapsed_Time=Elapsed_Time/60,
+         Dia_Semana=dayofweek(Activity_Date))
+
+head(df_activity)
+```
+
+Podemos ver el SQL generado mediante:
+```{r}
+dbplyr::sql_render(df_activity)
+```
+
+Si intentamos ver un resumen vemos que el objeto no es un dataframe de R:
+```{r}
+summary(df_activity)
+```
+
+Vamos a quedarnos con todas las filas que tengan un Activity.Name común, que el número de ocurrencias sea mayor de 5:
+```{r}
+df_activity_work <- df_activity %>% 
+  group_by(Activity_Name) %>%
+  filter( n()> 5 & !Dia_Semana %in% c(7,1) ) 
+```
+
+Podemos traernos el dataframe a R con la función collect()
+```{r}
+df_result <- df_activity_work %>% collect() %>% mutate(Dia_Semana=as.factor(Dia_Semana))
+summary(df_result)
+```
+
+Ahora ya podemos pintarlo como antes:
+```{r}
+DataExplorer::plot_boxplot(df_result, by='Activity_Name', ncol=5,
+                           geom_boxplot_args = list("color" = "blue", outlier.color='red'))
+```
+
+
+Se puede cerrar la sesión spark con:
+```{r}
+spark_disconnect(sc)
+```

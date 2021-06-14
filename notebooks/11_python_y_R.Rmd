@@ -1,0 +1,40 @@
+---
+title: "Python y R"
+output: html_notebook
+---
+
+
+Primero cargamos la librería reticulate y le decimos donde está nuestro binario Python:
+```{r}
+library(reticulate)
+use_python("/usr/local/bin/python")
+```
+
+Gracias a esto ya tenemos una nueva etiqueta en la que podemos escribir en notebooks codigo python:
+```{python}
+import pandas as pd
+
+file_name='../material_adicional/datasets/actividad_deportiva.csv'
+pd_activity_raw=pd.read_csv(file_name)
+pd_activity_raw=pd_activity_raw.loc[:,['Activity Date', 'Activity Name', 'Activity Type', 'Elapsed Time', 'Distance']]
+pd_activity_raw.head()
+```
+
+
+Puedo traerme las variables de Python a R
+```{r}
+df<-py$pd_activity_raw
+```
+
+En celdas de código R puedo importar objetos y librerias Python:
+```{r}
+pyfunds <- import_from_path('pyfunds', path = "./python/")
+dt <- import("datetime", convert = FALSE)
+funds<-c('IE00BQT3WG13','IE0007292083','IE0007471695')
+m<-pyfunds$MorningStar(funds,start_date=dt$date(2009L, 1L, 1L))
+df_values<-m$df_values
+df_values$date<-as.Date(rownames(df_values))
+```
+
+
+

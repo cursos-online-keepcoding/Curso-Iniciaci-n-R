@@ -1,0 +1,413 @@
+---
+title: "Análisis exploratorio"
+output: html_notebook
+---
+
+Vamos a analizar el dataset de comics que podemos encontrar en la siguiente URL:
+https://github.com/fivethirtyeight/data/tree/master/comic-characters
+
+
+# Obtención de datos
+
+Descargamos los datos con read.csv:
+```{r}
+url_dc <- "https://raw.githubusercontent.com/fivethirtyeight/data/master/comic-characters/dc-wikia-data.csv"
+url_marvel <-"https://raw.githubusercontent.com/fivethirtyeight/data/master/comic-characters/marvel-wikia-data.csv"
+dc_comics  <-read.csv(url_dc, stringsAsFactors = T)
+marvel_comics<-read.csv(url_marvel, stringsAsFactors = T)
+```
+
+Comprobamos las variables (columnas) que tiene cada uno de los datasets:
+```{r}
+print("DC")
+str(dc_comics)
+print("MARVEL")
+str(marvel_comics)
+```
+
+También se podía ver utilizando el paquete DataExplorer:
+```{r}
+DataExplorer::plot_str(list(dc_comics, marvel_comics))
+```
+
+https://cran.r-project.org/web/packages/DataExplorer/vignettes/dataexplorer-intro.html
+
+Ambos tienen las mismas columnas así que podemos combinar los dos datsets en uno añadiendo una nueva columna que nos diga cual es la editorial de origen:
+```{r}
+library(dplyr)
+dc_comics$editorial<- as.factor("DC")
+marvel_comics$editorial<- as.factor("Marvel")
+comics<-rbind(dc_comics, marvel_comics %>% rename(YEAR=Year) )
+str(comics)
+```
+
+Podemos pedir una descripción con el paquete DataExplorer:
+```{r}
+DataExplorer::introduce(comics)
+```
+
+
+Vemos que hay 23272 filas, 14 columnas. De las cuales 11 son categóricas y 3 son numéricas. No hay ninguna columna con todo NA. Hay en total 2335 valores con NA y 21146 filas completas sin NA.
+
+```{r}
+summary(comics)
+```
+Vemos que hay 6896 personajes de DC y 16376 personajes de Marvel. 
+
+
+# Limpieza y transformación de datos
+
+Vamos a convertir las columnas `name` y `urlslug` de categóricas a solo texto para reducir su tamaño en memoria:
+```{r}
+paste("Tamaño original del dataframe:", object.size(comics),"bytes")
+comics$name <- as.character(comics$name)
+comics$urlslug <- as.character(comics$urlslug)
+paste("Tamaño despues de la transformación", object.size(comics),"bytes")
+```
+
+Eliminamos también la columna `page_id`:
+```{r}
+comics$page_id <- NULL
+paste("Tamaño despues de eliminar la columna page_id", object.size(comics),"bytes")
+```
+
+## Imputación de NA
+
+Hay muchas columnas que tienen un valor "" cuando realmente debería ser NA, vamos a reemplazarlo:
+```{r}
+#comics[comics==""]<-NA
+#comics <- comics %>% mutate_each(droplevels, one_of(colnames(comics)[sapply(comics, class)=="factor"]))
+#comics <- comics %>% mutate(across(one_of(colnames(comics)[sapply(comics, class)=="factor"]), droplevels ))
+comics <- comics %>% 
+           mutate(across(.cols=everything(),~replace(., .=="", NA))) %>% 
+           mutate(across(one_of(colnames(comics)[sapply(comics, class)=="factor"]), droplevels ))
+```
+
+Comprobamos que todas las columnas de tipo factor no tienen ningún nivel que sea cadena de texto vacia:
+```{r}
+summary(comics)
+```
+
+Ahora podemos ver que el número de NAs ha aumentado, pero este el número correcto:
+```{r}
+DataExplorer::introduce(comics)
+```
+
+## Nueva columna URL
+
+Vamos a crear a partir del SLUG la URL completa. El prefijo de URL que hay que añadir es diferente en función de la editorial.
+
+* A los comics DC tenemos que añadir: https://dc.fandom.com/
+* A los comics Marvel tenemos que añadir: https://marvel.fandom.com/wiki/
+
+En ambos casos tenemos que eliminar los caracteres de escape \ vamos a eliminarlo con gsub:
+```{r}
+url_DC <- paste0("https://dc.fandom.com",gsub("\\\\","",comics$urlslug))
+url_Marvel <- paste0("https://marvel.fandom.com/wiki",gsub("\\\\","",comics$urlslug))
+```
+
+Una opción sería hacerlo con comandos de R base:
+```{r}
+idx_DC = comics$editorial=="DC"
+comics$url[idx_DC] <- url_DC[idx_DC]
+idx_Marvel = comics$editorial=="Marvel"
+comics$url[idx_Marvel] <- url_Marvel[idx_Marvel]
+str(comics$url)
+```
+
+Otra opción sería usando la librería dplyr con las funciones mutate() e if_else():
+```{r}
+comics <- comics %>% mutate(url = if_else(editorial=="DC",
+  paste0("https://dc.fandom.com",gsub("\\\\","",urlslug)),                                                paste0("https://marvel.fandom.com/wiki",gsub("\\\\","",urlslug))
+))
+str(comics$url)
+```
+
+
+
+## Fechas
+
+Vamos a convertir la columna FIST.APPEARANCE de factor a Date.
+
+Primero comprobamos que efectivametne el formato fecha es distingo en cada una de las editoriales:
+```{r}
+head(comics$FIRST.APPEARANCE[comics$editorial=="DC"])
+head(comics$FIRST.APPEARANCE[comics$editorial=="Marvel"])
+```
+
+Para parsear estas fechas usaremos la función as.Date() junto con la ayuda indicada en ?strptime.
+Cuando tenemos fechas con nombres de meses, tenemos que seleccionar los locales en ese idioma destino.
+```{r}
+Sys.setlocale("LC_TIME", "C")
+fecha_ejemplo<-as.Date("2010-10-1")
+format(fecha_ejemplo,format="%d %B %Y")
+as.Date("2025 Jul 01",format="%Y %b %d")
+```
+
+Una opción sería hacerlo con comandos de R base:
+```{r}
+comics$FIRST.APPEARANCE.DATE<-as.Date(NA)
+idx_DC = comics$editorial=="DC"
+comics$FIRST.APPEARANCE.DATE[idx_DC] <- as.Date(paste(comics$FIRST.APPEARANCE[idx_DC],", 01"), format="%Y, %B , %d")
+idx_Marvel = comics$editorial=="Marvel"
+comics$FIRST.APPEARANCE.DATE[idx_Marvel] <- as.Date(paste(comics$FIRST.APPEARANCE[idx_Marvel],", 01"), format="%b-%y , %d")
+str(comics$FIRST.APPEARANCE.DATE)
+```
+
+Otra opción sería usando la librería dplyr. Atención que aquí hay que usar if_else() en lugar de ifelse() si queremos que la salida sea en formato fecha y no numérico:
+```{r}
+comics <- comics %>% mutate(FIRST.APPEARANCE.DATE = if_else(editorial=="DC",
+                        as.Date(paste(FIRST.APPEARANCE,", 01"), format="%Y, %B , %d"),
+                        as.Date(paste(FIRST.APPEARANCE,", 01"), format="%b-%y , %d")
+))
+str(comics$FIRST.APPEARANCE.DATE)
+```
+
+Existe un problema, y es que para Marvel, la constante '%y' supone que para años del 00-68 pone como prefijo 20 y para 69 a 99 pone 19.
+Así muchos comics aparecen con fecha en el futuro:
+```{r}
+head(comics[comics$editorial=="Marvel",c("FIRST.APPEARANCE.DATE","FIRST.APPEARANCE")])
+```
+Esto lo podemos solucionar restando 100 años a todos aquellos comics con fecha posterior a 2021:
+```{r}
+library(lubridate)
+idx<- na.omit(which(comics$editorial=="Marvel" & year(comics$FIRST.APPEARANCE.DATE)>2021))
+
+comics[idx,"FIRST.APPEARANCE.DATE"] <- comics[idx,"FIRST.APPEARANCE.DATE"] %m-% years(100)
+
+#Otra opción sería asignar el año de la columna YEAR
+year(comics[idx,"FIRST.APPEARANCE.DATE"]) <- comics[idx,"YEAR"]
+```
+
+
+
+# Exploración de datos
+
+## Primer caracter
+
+Vamos a buscar el primer personaje de comic:
+```{r}
+comics[which.min(comics$FIRST.APPEARANCE.DATE),c("name","ID","SEX","APPEARANCES","FIRST.APPEARANCE.DATE","editorial")]
+```
+Vamos a descargarnos información adicional de este caracter:
+```{r}
+library(rvest)
+#Realmente read_html es una función exportada por xml2 que se carga al 
+page_html<-read_html(comics[which.min(comics$YEAR),]$url) 
+texto <- page_html %>% html_nodes("p") %>% html_text()
+texto[2]
+```
+
+
+Vamos a descargarnos su foto princial:
+```{r}
+img_html <- page_html %>% html_nodes("img")
+
+idx_img <- which(img_html %>% html_attr("class") == "pi-image-thumbnail")
+url_imagen<-html_attr(img_html,"src")[idx_img]
+```
+
+Nos podemos descargar la imagen como una matriz de 499x249x3 que represental as tres capas en rojo, verde y azul
+```{r}
+library(jpeg)
+library(RCurl)
+image_matrix<- readJPEG(getURLContent(url_imagen)) 
+str(image_matrix)
+```
+
+```{r}
+mx_dim=max(dim(image_matrix))
+plot(c(1,mx_dim),c(1,mx_dim), type='n')
+rasterImage(image_matrix, 1, 1, ncol(image_matrix),nrow(image_matrix))
+```
+Vamos a descomponer la imagen en sus componentes rojo, verde y azul:
+```{r}
+plot(c(1,3*ncol(image_matrix)),c(1,mx_dim), type='n')
+
+image_matrix_red <- image_matrix
+image_matrix_red[,,2:3]<-0
+rasterImage(image_matrix_red, 1, 1, ncol(image_matrix),nrow(image_matrix))
+
+image_matrix_green <- image_matrix
+image_matrix_green[,,c(1,3)]<-0
+rasterImage(image_matrix_green, ncol(image_matrix), 1, 2*ncol(image_matrix),nrow(image_matrix))
+
+image_matrix_blue <- image_matrix
+image_matrix_blue[,,c(1,2)]<-0
+rasterImage(image_matrix_blue, 2*ncol(image_matrix), 1, 3*ncol(image_matrix),nrow(image_matrix))
+```
+
+## Caracter que más veces aparece
+
+Vamos a ver los caracteres que más veces han salido en cada editorial:
+```{r}
+comics %>% group_by(editorial) %>% slice(which.max(APPEARANCES)) %>% 
+  select(name,ID,SEX,APPEARANCES,FIRST.APPEARANCE.DATE,editorial)
+```
+
+```{r}
+get_foto_descripcion<-function(url){
+  page_html<-read_html(url) 
+  texto <- page_html %>% html_nodes("p") %>% html_text()
+  idx_text <- which.max(lapply(texto[2:4],nchar))+1
+  
+  img_html <- page_html %>% html_nodes("img")
+  idx_img <- which(img_html %>% html_attr("class") == "pi-image-thumbnail")
+  if (length(idx_img)==0){
+    idx_img<-2  
+  }
+  url_imagen<-html_attr(img_html,"src")[idx_img]
+  
+  image_matrix<- readJPEG(getURLContent(url_imagen)) 
+  list(imagen=image_matrix, descripcion=texto[idx_text])
+}
+
+plot_image<-function(image_matrix){
+  mx_dim=max(dim(image_matrix))
+  plot(c(1,mx_dim),c(1,mx_dim), type='n')
+  rasterImage(image_matrix, 1, 1, ncol(image_matrix),nrow(image_matrix))
+}
+
+get_url_de_nombre <- function(df, nombre){
+  df[grepl(nombre,df$name),c("name","url")]
+}
+```
+
+
+```{r}
+urls_batman <- get_url_de_nombre(comics,"Batman")
+urls_batman
+```
+```{r}
+foto_desc<-get_foto_descripcion(urls_batman$url[1])
+str(foto_desc)
+```
+
+```{r}
+print(foto_desc$descripcion)
+plot_image(foto_desc$imagen)
+```
+
+
+Vamos a ver los 5 caracteres que más veces han salido en cada editorial:
+```{r}
+comics %>% group_by(editorial) %>% top_n(n=5, wt=APPEARANCES) %>% 
+  select(name,ALIGN,ID,SEX,APPEARANCES,FIRST.APPEARANCE.DATE,YEAR,editorial)
+```
+
+
+
+Vamos a ver los 5 caracteres de "malos" que más veces han salido en cada editorial:
+```{r}
+comics %>% filter(ALIGN=="Bad Characters") %>% group_by(editorial) %>% top_n(n=5, wt=APPEARANCES) %>% 
+  select(name,ID,SEX,APPEARANCES,FIRST.APPEARANCE.DATE,YEAR,editorial)
+```
+
+```{r}
+urls_bad <- get_url_de_nombre(comics,"Wilson Fisk")
+urls_bad
+```
+
+```{r}
+foto_desc<-get_foto_descripcion(urls_bad$url[1])
+print(foto_desc$descripcion)
+plot_image(foto_desc$imagen)
+```
+
+## Exploratorio otras variables
+
+
+Vamos a pintar diferentes variables y ver su relación. Por ejemplo, veamos cuantos personajes hay en cada editorial:
+```{r}
+library(ggplot2)
+ggplot(comics,aes(x=editorial,fill=editorial))+geom_bar()+ylab("Número caracteres")
+```
+Como ya habíamos visto antes con la función summary() hay 6896 personajes de DC y 16376 personajes de Marvel. 
+
+Vamos a pintar diferentes variables y ver su relación. Por ejemplo, veamos cuantos personajes hay en cada editorial:
+```{r}
+ggplot(comics,aes(x=ALIGN,fill=editorial))+geom_bar(position='dodge')+
+   ylab("Número caracteres")+ggtitle("Tipo de caracter")+theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+```{r}
+DataExplorer::plot_bar(comics[,c("editorial","ALIGN","EYE")])
+```
+
+
+
+Vamos a ver comparaciones entra editoriales
+
+```{r}
+#DataExplorer::plot_bar(comics, by = "editorial", maxcat = 10, theme_config = list(axis.text.x = ggplot2::element_text(angle = 90)))
+DataExplorer::plot_bar(comics, by = "editorial", by_position='stack', maxcat = 10, theme_config = list(axis.text.x = ggplot2::element_text(angle = 90)))
+```
+
+
+Vemos que "Agender" y "Genderless" posiblemente signifiquen lo mismo, pero uno viene definido en DC y otro en Marvel
+
+```{r}
+table(droplevels(comics[comics$SEX %in% c("Agender Characters", "Genderless Characters"),c("SEX","editorial")]))
+```
+Vamos a unificar el grupo Genderless dentro del grupo Agender:
+```{r}
+library(forcats)
+comics <- comics %>% mutate(SEX = fct_collapse(SEX, 'Agender Characters'=c("Agender Characters","Genderless Characters")))
+tbl_sex_editorial<-table(comics[,c("SEX","editorial")])
+tbl_sex_editorial
+```
+
+Si queremos ver el ratio de que editorial provienen los caracteres por sexo.
+Definido con notación estadística sería $P(editorial|SEX)$
+```{r}
+prop.table(tbl_sex_editorial, margin=1)
+```
+
+Aquí lo que sacamos en conclusión es que la mayor parte de los caracteres vienen de Marvel. Excepto los transgéneros que todos son de DC (los dos únicos que hay).
+
+Si queremos ver el ratio de sexos por cada editorial
+Definido con notación estadística sería $P(SEX|editorial)$
+```{r}
+prop.table(tbl_sex_editorial, margin=2)
+```
+Aquí podemos ver claramente como más del 70% de los caracteres en las dos editoriales son hombres, les siguen las mujeres con un 29% de representación en DC y un 24% en Marvel.
+
+
+Podemos ver correlaciones entre diferentes categorías:
+```{r fig.width=10, fig.height=8,echo=FALSE}
+DataExplorer::plot_correlation(comics[,c("editorial","SEX","ALIVE","ALIGN")])
+```
+Vemos que en DC suele haber más caracteres buenos y en Marvel hay más caracteres neutrales. También vemos que los caracteres femeninos tienden ser buenos y los masculinos presentan una mayor correlación con la maldad.
+
+
+Vamos a correlar variables numéricas entre si y con la editorial:
+```{r fig.width=10, fig.height=8,echo=FALSE}
+DataExplorer::plot_correlation(comics[,c("editorial","APPEARANCES","ALIVE",'YEAR')], cor_args = list("use" = "pairwise.complete.obs"))
+```
+Hay una correlación negativa entre el año de creación del caracter y el número de apariciones que ha tenido. Lo cual es lógico porque ha tenido menos oportunidades de aparecer.
+
+Vamos a ver las apariciones que ha habido cada año:
+```{r}
+library(ggplot2)
+#comics %>% group_by(YEAR, editorial) %>% summarise(num_app=sum(APPEARANCES, na.rm = T), .groups='keep') -> appearances_year
+comics %>% group_by(YEAR, editorial) %>% summarise(num_app=sum(APPEARANCES, na.rm = T), 
+                                                   num_chars=n(),.groups='drop') -> appearances_year
+str(appearances_year)
+ggplot(appearances_year,aes(x=YEAR, y=num_chars, fill=editorial))+geom_col(color='#778888',position = 'dodge')+geom_smooth()
+```
+Vemos como antes de 1950 Marvel creó bastantes personajes más que DC. Ambos han ido creado bastantes personales y la tendencia parece ligeramente ascendente.
+
+Podemos ver como de populares son los personajes (cuantas veces han aparecido) en función del año en el que se crearon:
+```{r}
+#ggplot(appearances_year,aes(x=YEAR, y=num_app, fill=editorial))+geom_col(color='black',position = 'dodge')
+ggplot(appearances_year,aes(x=YEAR, y=num_app, color=editorial))+geom_line()+geom_point(size=3)
+```
+Vemos que en DC entorno a 1940 aparecieron bastantes personajes que han pemanecido siendo famosos, mientras que en Marvel fue entorno a 1963.
+
+Vamos a ver si existe una diferencia en el mes de aparición del caracter
+```{r}
+library(lubridate)
+ggplot(comics,aes(x=month(FIRST.APPEARANCE.DATE, label=TRUE), fill=editorial))+geom_bar()
+```
+
+
+

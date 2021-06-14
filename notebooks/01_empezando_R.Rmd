@@ -1,0 +1,409 @@
+---
+title: "Empezando en R"
+output: html_notebook
+---
+
+
+## Operaciones numéricas
+
+Los números por defecto son doubles, esto es número con decimales. Podemos asignar un número a una variable:
+
+* Asignación:
+```{r}
+a <- 5
+b = 2
+```
+* Operaciones aritméticas
+```{r}
+b+a #Suma
+b*a #Multiplicación
+b-a #Resta
+b/a #División: 
+a%/%b #División entera: 
+a %% b #Módulo: 
+a^b #Potencia: 
+```
+ 
+* Otros:
+```{r}
+3:10        #Secuencias
+6 %in% 3:10 #contiene
+```
+
+
+## Vector
+
+Un vector es un tipo de datos estructurado que permite almacenar un conjuto de datos del **mismo tipo** y donde el orden en el que almacenan importa.
+Se genera con la función `c()`
+
+Por ejemplo:
+```{r}
+(myVector<- c(3,5,9,ancho=8,peso=10,altura=12))
+(myTxt     <- c("rojo","verde","azul"))
+```
+Para acceder a sus elementos:
+```{r}
+myTxt[1]
+```
+
+```{r}
+myVector[c(3:4,1)]
+```
+
+```{r}
+myVector["peso"]
+```
+
+Un número es un vector de dimensión 1.
+
+## Listas
+
+Un vector es un tipo de datos estructurado que permite almacenar un conjuto de datos del **diferente** tipo y donde el orden en el que almacenan importa.
+Se genera con la función `list()`
+
+```{r}
+venta<-list(producto="bicicleta",precio=314.6,color="rojo")
+venta
+```
+Accedemos a sus elementos con `[[]]`
+```{r}
+venta[["producto"]]
+```
+
+```{r}
+venta[[2]]
+```
+El acceso con `[]` devuelve una lista
+```{r}
+venta[2]
+typeof(venta[2])
+```
+Podemos devolver un subset de la lista:
+```{r}
+venta[2:3]
+```
+
+
+## Matrices
+
+Una matriz es un array bidimensional, un objeto donde guardamos la información en forma de tabla:
+
+|||
+|-|-|
+|1|4|
+|2|5|
+|1|1|
+
+Podemos crear esta matriz en R de la siguiente forma:
+```{r}
+(m<-matrix(c(1,2,1,4,5,1),ncol=2))
+```
+Para acceder a sus elementos:
+```{r}
+m[1,2]
+```
+
+## Factores
+
+Se utiliza para almacenar variables categóricas. Esto son categorías que tienen un conjunto de valores finitos. Ej: Tallas de camisetas, colores, paises
+
+```{r}
+colores_catalogo <- factor(c("rojo", "verde", "magenta"))
+colores_catalogo
+```
+
+## Dataframe
+
+Objeto que se utiliza para guardar información en formato tabla:
+
+| Nombre | Apellidos | Edad | Época de Procedencia |
+|-|-|-|-|
+| Amelia | Folch | 23 | 1880 |
+| Salvador | Martí | 64 | 2000 |
+| Angustias | Vazquez | 62 | 1900 |
+| Alonso | de Entrerios | 35 | 1569 |
+
+```{r}
+df_mt <- data.frame(Nombre=c('Amelia','Salvador','Angustias','Alonso'),
+                 Apellidos=c('Folch','Martí','Vazquez','de Entrerios'),
+                 Edad=c(23,64,62,35),
+                 Epoca.de.procedencia=c(1880,2000,1900,1569))
+df_mt
+```
+
+
+Podemos acceder por columnas:
+```{r}
+df_mt[,"Nombre"]
+```
+```{r}
+df_mt$Nombre
+```
+
+```{r}
+df_mt[,3]
+```
+
+O por columnas:
+```{r}
+df_mt[2,]
+```
+
+Podemos hacer búsquedas:
+```{r}
+df_mt[df_mt$Epoca.de.procedencia<1900,]
+```
+
+
+## Tible
+Existe una evolución del dataframe llamado tibble:
+https://blog.rstudio.com/2016/03/24/tibble-1-0-0/
+
+
+```{r}
+library(tibble)
+tb_mt <- tibble(Nombre=c('Amelia','Salvador','Angustias','Alonso'),
+                 Apellidos=c('Folch','Martí','Vazquez','de Entrerios'),
+                 Edad=c(23,64,62,35),
+                 Epoca.de.procedencia=c(1880,2000,1900,1569))
+tb_mt
+```
+
+También puedes crearlo yendo fila a fila:
+```{r}
+trb_mt <- tribble(~Nombre, ~Apellidos, ~Edad, ~Epoca.de.procedencia,
+                  'Amelia','Folch',23,1880,
+                  'Salvador','Martí',64,2000,
+                  'Angustias','Vazquez',62,1900,
+                  'Alonso','de Entrerios',35,1569)
+trb_mt
+```
+
+```{r}
+as_tibble(df_mt)
+```
+
+
+Diferencias tibble vs Dataframe:
+```{r}
+df_mt[,"Nombre"] #Devuelve un vector
+df_mt[,"Nombre",drop=FALSE] #Devuelve un objeto dataframe
+tb_mt[,"Nombre"] #Devuelve un objeto tibble
+```
+
+
+```{r}
+df_mt$Epo #A un dataframe se le puede obtener una columna nombrando parte de su nombre
+tb_mt$Epo #En un tibble hay que escribir el nombre completo o dará error
+```
+
+## Fechas y horas
+
+Existen dos objetos para almacenar fechas con hora en R.
+* Posixct es recubrimiento sobre un timestamp en segundos.
+* Posixlt es una lista de objetos que contiene la información de la fecha
+
+```{r}
+d1<-as.POSIXct("2021-10-5 15:40")
+d2<-as.POSIXct("5/10/2021 17:33",format="%m/%d/%Y")
+d1
+d2
+class(d1)
+```
+POSIXct no es más que un recubrimiento sobre el timestamp:
+```{r}
+unclass(d1)
+```
+
+Podemos modificar una fecha añadiendole o restandole segundos:
+```{r}
+d1+60*60*24
+```
+
+
+POSIXlt parece igual, pero su estructura interna hace que sea una lista
+```{r}
+d3<-as.POSIXlt("2021-4-5")
+d3
+```
+
+Podemos modificar un dia directamente:
+```{r}
+d3$mday<-6
+```
+
+Al intentar guardarlo en un data.frame directamente lo convierte en POSIXct:
+```{r}
+df<-data.frame(fecha=c(as.POSIXlt("2018-01-01"),as.POSIXlt("2018-01-02"),as.POSIXlt("2018-01-03")))
+str(df)
+```
+
+
+## Valores no disposibles
+
+Son valores de los cuales no tenemos información, bien porque no se ha podido obtener esa información o porque no tiene sentido.
+También se conoce por su nombre en inglés como NA (Not Available) o Missing Value. 
+
+En R se define con la palabra reservada `NA` 
+
+```{r}
+NA
+```
+
+
+```{r}
+v<-c(1,3,4,NA,8)
+v
+```
+
+Podemos usar la función is.na() para averiguar si un elemento es NA o no
+```{r}
+is.na(v)
+```
+
+Podemos eliminar los NA de un vector o dataframe con na.omit()
+```{r}
+v_limpio<-na.omit(v)
+v_limpio
+```
+O podemos eliminarlo por su índice:
+```{r}
+v_limpio<-v[!is.na(v)]
+v_limpio
+```
+
+
+
+## Número no válido
+
+También conocido como NAN (Not a Number), sale de realizar operaciones matemáticas que sale indeterminado por ejemplo 0/0
+
+```{r}
+x<-5
+paste("Es finito",
+  is.finite(x),
+  ". Es infinito",
+  is.infinite(x),
+  ". Es NaN",
+is.nan(x))
+```
+
+```{r}
+x<-5/0
+paste("Es finito",
+  is.finite(x),
+  ". Es infinito",
+  is.infinite(x),
+  ". Es NaN",
+is.nan(x))
+```
+
+```{r}
+x<-0/0
+paste("Es finito",
+  is.finite(x),
+  ". Es infinito",
+  is.infinite(x),
+  ". Es NaN",
+is.nan(x))
+```
+
+## Valores NULL
+
+Son valores que no existen:
+```{r}
+c(1,2,NULL,5,NA,7)
+```
+
+Comprobamos que una variable es null con is.null()
+```{r}
+x<-NULL
+is.null(x)
+```
+Podemos eliminar una columna de un data.frame asignandola a NULL (con tibble no funciona)
+```{r}
+df_mt$Nombre<-NULL
+df_mt
+```
+
+# Ejemplo
+
+Vamos a analizar unos datos de actividad deportiva.
+
+El fichero se llama activities y se encuentra dentro de material_adicional/datasets.
+
+Vamos a ver que que directorio estamos. Si estamos ejecutando desde un notebook la ruta corresponderá al directorio donde está el notebook:
+```{r}
+getwd()
+```
+
+Comprobamos que el fichero existe:
+```{r}
+dir('../material_adicional/datasets')
+```
+
+```{r}
+file_name<-'../material_adicional/datasets/actividad_deportiva.csv'
+df_activity<-read.csv(file_name, stringsAsFactors = F)
+head(df_activity)
+```
+
+Tenemos un objeto de clase data.frame:
+```{r}
+class(df_activity)
+```
+
+Podemos ver su contenido con la función str():
+```{r}
+str(df_activity)
+```
+
+Podemos ver un resumen:
+```{r}
+summary(df_activity)
+```
+
+Vamos a quedarnos solo con las primeras columnas hasta `Average.Grade`
+```{r}
+df_activity<-df_activity[,1:which(colnames(df_activity)=='Average.Grade')]
+summary(df_activity)
+```
+
+Vamos a eliminar las columnas `Activity.Type`,`Relative.Effort`,`Activity.Gear`, `Athlete.Weight`, `Bike.Weight`, `Activity.Description` que son todo NAs:
+```{r}
+indice_columnas_a_borrar<-which(colnames(df_activity) %in% c('Activity.Description','Bike.Weight','Activity.Type','Relative.Effort','Activity.Gear', 'Athlete.Weight'))
+df_activity<-df_activity[, -indice_columnas_a_borrar]
+summary(df_activity)
+```
+Hay varias columnas repetidas (las que acaban en .1), vamos a eliminarlas con la ayuda de la función `grepl()`.
+Esta función espera recibir como primer parámetro un patron y como segundo un vector. Devuelve TRUE si encuentra ese patrón dentro del vector, FALSE en caso contrario. Con el parámetro `fixed=T` estamos diciendo que no utilize patrones regex.
+
+```{r}
+columnas_mantener <- !grepl(".1",colnames(df_activity),fixed=T) 
+df_activity<-df_activity[, columnas_mantener]
+summary(df_activity)
+```
+
+Vamos a convertir las cadenas de texto a factor:
+```{r}
+df_activity$Activity.Name<-as.factor(df_activity$Activity.Name)
+df_activity$Commute<-as.factor(df_activity$Commute)
+summary(df_activity)
+```
+
+
+Vamos a convertir la columna `Activity.Date` en formato fecha con hora.
+```{r}
+head(df_activity$Activity.Date)
+```
+
+```{r}
+Sys.setlocale("LC_TIME", "C")
+df_activity$Activity.Date<-as.POSIXct(df_activity$Activity.Date,tz="CET",format='%B %d, %Y, %H:%M:%S')
+summary(df_activity)
+```
+El campo "Elapsed.Time" está en segundos, vamos a convertilo a segundos:
+```{r}
+df_activity$Elapsed.Time<-df_activity$Elapsed.Time/60
+summary(df_activity)
+```

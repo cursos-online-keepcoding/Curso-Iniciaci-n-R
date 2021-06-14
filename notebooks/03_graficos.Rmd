@@ -1,0 +1,454 @@
+---
+title: "Gráficos en R"
+output: html_notebook
+---
+
+# Introducción a ggplot2
+
+https://ggplot2.tidyverse.org/
+
+Gplot2 es un sistema para crear gráficos de forma declarativa.
+
+## Básico
+
+* geom_line()  : Dibuja lineas
+* geom_point() : Dibuja puntos
+* geom_col()   : Dibula barras (columnas)
+
+
+```{r}
+url_oktoberfest<-"https://www.opengov-muenchen.de/dataset/8d6c8251-7956-4f92-8c96-f79106aab828/resource/e0f664cf-6dd9-4743-bd2b-81a8b18bd1d2/download/oktoberfestgesamt19852019.csv"
+df_oktoberfest<-read.csv(url_oktoberfest)
+str(df_oktoberfest)
+```
+El conjunto de datos del Oktoberfest incluye actualmente las cifras anuales sobre la duración del Oktoberfest, el número total de visitantes, el número de visitantes diarios, los precios de la cerveza, el consumo de cerveza, los precios del pollo asado, el consumo de pollo asado.
+
+* año
+* duración
+* visitantes_total (en millones)
+* visitante_etiqueta (en 1000)
+* precio_cerveza (1 litro)
+* beer_consumption (en hectolitros)
+* pollo_preis
+* consumo_pollo
+
+
+```{r}
+colnames(df_oktoberfest)<-c('año','duracion','visitantes.total','visitantes.tag','precio.cerveza','consumo.cerveza','precio.pollo','consumo.pollo')
+summary(df_oktoberfest)
+```
+
+Vamos a pintar el precio de la cerveza en función de año utilizando la librería ggplot:
+```{r}
+library(ggplot2)
+ggplot(df_oktoberfest, aes(x=año,y=precio.cerveza))+geom_line(color='blue')+
+   geom_point(color='#FF99AA')+
+   xlab("Año")+ylab("Precio €")+ggtitle("Precio de la cerveza en el oktoberfest")+
+   theme_bw()
+
+```
+
+Podemos pintar el precio de la cerveza y del pollo:
+```{r}
+ggplot(df_oktoberfest, aes(x=año))+
+   geom_line(aes(y=precio.cerveza,color='cerveza'))+
+   geom_line(aes(y=precio.pollo,color='pollo'))+
+   ylab("Precio €")+
+   xlab("Año")+
+   ggtitle("Precio de la cerveza y el pollo en el Oktoberfest")
+```
+
+
+
+```{r}
+library(reshape2)
+df_melted <- melt(df_oktoberfest,id.vars = c('año'), measure.vars = c('precio.cerveza','precio.pollo'), variable.name= 'tipo', value.name='precio')
+
+ggplot(df_melted,aes(x=año, y=precio, color=tipo))+
+  geom_line()+
+  geom_col(position='dodge',aes(fill=tipo))+
+  ylab("Precio €")+xlab("Año")+ggtitle("Precio de la cerveza en el Oktoberfest")
+```
+Vamos a pintar el número de visitantes:
+```{r}
+ggplot(df_oktoberfest,aes(x=año,y=visitantes.total))+geom_line()+
+   geom_point(color='red')+
+   ylab("Millones")+
+   xlab("Año")+
+   ggtitle("Número de visitantes")+
+   geom_smooth(method='lm',formula=y~x+I(x^2))+
+   theme_bw()
+```
+Vamos a pintar el consumo de cerveza:
+```{r}
+ggplot(df_oktoberfest,aes(x=año,y=consumo.cerveza))+geom_line()+
+   geom_point(color='red')+
+   ylab("Millones")+
+   xlab("Año")+
+   ggtitle("Consumo de cerveza")+
+   theme_bw()
+```
+
+
+Podemos ver el consumo por persona, ver si ha aumentado:
+```{r}
+ggplot(df_oktoberfest,aes(x=año,y=consumo.cerveza*100/(visitantes.total*1e6)))+geom_line()+
+   geom_point(color='red')+
+   xlab("Año")+
+   ylab("Litros/Persona")+
+   ggtitle("Consumo de cerveza por persona")+
+   geom_smooth(method='lm',formula=y~x+I(x^2)+I(x^3))+
+   theme_bw()
+```
+
+
+
+Sabiendo el precio de una maß podemos estimar cuanto dinero se ha gandado por año:
+Podemos ver el consumo por persona, ver si ha aumentado:
+```{r}
+ggplot(df_oktoberfest,aes(x=año,y=(precio.cerveza*consumo.cerveza*100)/1e6))+geom_line()+
+   geom_point(color='red')+
+   xlab("Año")+
+   ylab("Millones €")+
+   ggtitle("Ingreso aproximado por cerveza")+
+   geom_smooth(method='lm',formula=y~x+I(x^2)+I(x^3))+
+   theme_bw()
+```
+## Correlaciones
+
+```{r}
+cr_oktober<-cor(df_oktoberfest)
+cr_oktober
+```
+Sale una correlación positiva entre precio de la cerveza y el consumo. Eso no crea una relación de causalidad, a mayor precio más consumo, simplemente refleja un cambio en tendencias de la población.
+
+```{r}
+library(reshape2)
+mlt_cr_oktober <- melt(cr_oktober)
+tail(mlt_cr_oktober)
+```
+
+```{r}
+ggplot(data = mlt_cr_oktober, aes(x=Var1, y=Var2, fill=value)) + 
+   scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), 
+   name="Correlación") +
+   geom_tile()
+```
+```{r}
+library(corrplot)
+library(RColorBrewer)
+
+corrplot(cr_oktober, type="upper", order="hclust",
+         col=brewer.pal(n=8, name="RdYlBu"))
+```
+
+## GGplot avanzado
+
+Vamos a analizar los datos del siguiente artículo de Nature:
+https://www.nature.com/articles/s41598-020-71916-9.pdf
+donde trata de ver una relación entre las metas de desarrollo sostenible (Sustainable Development Goals, SDG) y el bienestar subjetivo (subjective well-being, SWB). Intentaremos obtener una gráfica que relacione ambos terminos como como la de la figura 1.
+
+Los datos vienen de dos fuentes:
+
+* **World Happiness Report**: https://worldhappiness.report/ed/2020/
+ * De la figura 2.1 obtenemos:  https://happiness-report.s3.amazonaws.com/2020/WHR20_DataForFigure2.1.xls
+
+* **Sustainable Development Report 2019** : https://www.sustainabledevelopment.report/reports/sustainable-development-report-2019/
+ * Los datos en excel son: https://github.com/sdsna/2019GlobalIndex/raw/master/2019GlobalIndexResults.xlsx
+
+
+Vamos a descargarnos el primer reporte de felicidad (World Happiness Report ,SWB):
+
+```{r}
+library(readxl)
+library(RCurl)
+url_whr<-'https://happiness-report.s3.amazonaws.com/2020/WHR20_DataForFigure2.1.xls'
+filename_whr <- '/tmp/WHR.xls'
+download.file(url_whr,filename_whr)
+df_whr <- read_excel(filename_whr)
+df_whr <- df_whr[,1:3]
+colnames(df_whr)<-c("pais","region","SWB")
+df_whr$region <- factor(df_whr$region)
+str(df_whr)
+```
+```{r}
+summary(df_whr)
+```
+
+Vamos a ver el diagrama de cajas, boxplot del SWB:
+```{r}
+library(ggplot2)
+ggplot(df_whr,aes(y=SWB))+geom_boxplot()+ggtitle("Bienestar subjetivo")
+```
+
+Recordemos que el boxplot nos indicaba los cuartiles:
+```{r}
+quantile(df_whr$SWB, c(0.25,0.5,0.75,0.95,0.1),na.rm=T)
+```
+
+Ahora intentaremos verlo por región:
+
+```{r}
+ggplot(df_whr,aes(y=SWB, color=region,x=region))+geom_boxplot()+
+    ggtitle("Bienestar subjetivo")+
+    theme(axis.text.x = element_text(angle = 45, hjust=1), legend.position = 'None',
+          plot.margin = margin(t = 0, r = 0, b = 0, l = 50, unit = "pt"))
+```
+
+Estos valores agrupados, junto con la media los podríamos obtener con ayuda de la librería dplyr:
+```{r}
+library(dplyr)
+df_whr %>% group_by(region) %>% summarise(mean.value=mean(SWB), q1=quantile(SWB,0.25), q2=quantile(SWB,0.5), q3=quantile(SWB,0.75))
+```
+Podemos buscar cual es el oulier de *Latin America and Caribbean*:
+```{r}
+idx<-which.min(df_whr[df_whr$region=='Latin America and Caribbean',]$SWB)
+df_whr[df_whr$region=='Latin America and Caribbean',][idx,]
+
+# Lo mismo con dplyr:`
+#df_whr %>% filter(region=='Latin America and Caribbean') %>% slice(which.min(SWB))
+```
+
+Es curioso el caso de Haití, podemos compararlo con el de su vecino República Dominicana:
+```{r}
+df_whr[df_whr$pais %in% c('Haiti', 'Dominican Republic'),]
+#df_whr %>% filter(pais %in% c('Haiti', 'Dominican Republic') )
+```
+
+Podemos representar un histograma:
+```{r}
+ggplot(df_whr,aes(x=SWB))+geom_histogram(bins=10, color='#7777FF', fill='#AABBEE')+
+    ggtitle("Bienestar subjetivo")
+```
+
+Vamos a añdir una nueva columna con el continente:
+```{r}
+library(countrycode)
+df_whr$continente <- factor(countrycode(df_whr$pais, 'country.name', 'continent',custom_match = c(Kosovo = "Europe")))
+summary(df_whr)
+```
+
+
+```{r}
+ggplot(df_whr,aes(x=SWB, fill=continente))+geom_histogram(bins=10, color='#7777FF', position='dodge')+
+    ggtitle("Bienestar subjetivo")
+```
+
+Podemos también pintar una estimación de densidad.
+
+```{r}
+ggplot(df_whr,aes(x=SWB))+geom_density(bw=0.2, kernel='gaussian')+
+       stat_function(fun=dnorm,args = list(mean = mean(df_whr$SWB), sd=sd(df_whr$SWB)),col="red")+
+    ggtitle("Bienestar subjetivo")
+```
+
+
+
+Vamos a descargarnos los datos de Sustainable Development (SDG) score:
+```{r}
+url_glir<-'https://raw.githubusercontent.com/sdsna/2019GlobalIndex/master/2019GlobalIndexResults.xlsx'
+filename_glir <- '/tmp/GlobalIndex.xlsx'
+download.file(url_glir,filename_glir)
+df_glir <- read_excel(filename_glir,sheet=4,skip = 1)
+df_glir <- df_glir[,c("Country","id","2019 Global Index Score (0-100)","Population in 2019","GDP per capita, PPP in 2017")]
+colnames(df_glir)<-c("pais","pais.id","SDG.index","population","gdp_per_capita")
+str(df_glir)
+```
+
+```{r}
+summary(df_glir)
+```
+
+Vamos a unir los dos dataframes:
+```{r}
+df_total<- merge(df_glir, df_whr, by='pais')
+nrow(df_total)
+```
+Vemos que hay muchos paises que no han coincidido, vamos a utilizar el identificador de pais:
+```{r}
+df_whr$pais.id<-countrycode(df_whr$pais, 'country.name', 'iso3c')
+#Se queja de que Kosovo no tiene codigo, pero tampoco aparece en el dataframe de SGD
+which(grepl('kosovo', tolower(df_glir$pais)))
+```
+
+Ahora unimos los dos dataframes por pais.id
+```{r}
+df_total <- merge(df_glir, df_whr, by='pais.id', suffixes = c('.glir','.whr'), all.y=T)
+nrow(df_total)
+```
+
+
+Los paises que aparecen en *df_glir* pero no aparecen en *df_whr* son:
+```{r}
+df_total[is.na(df_total$pais.glir),]
+```
+
+
+
+Vamos a pintar el indice de bienestar subjetivo (SWB) frente al indice de desarrollo sostenible (SDG)
+```{r}
+#Probar a poner color en aes() global y en geom_point
+ggplot(df_total,aes(x=SDG.index,y=SWB,color=continente))+
+   geom_point()+geom_smooth(method='lm',formula=y~x+I(x^2), color='red')+
+   xlab('Indice de desarrollo global sostenible (0-100)')+
+   ylab('Bienestar subjetivo (0-10)')
+```
+
+Vamos a añadir los nombres de diferentes paises:
+```{r}
+paises<-c('Spain','Colombia','Denmark','Nigeria','Germany','Haiti','Ukraine')
+df_total[df_total$pais.glir %in% paises, c('pais.glir','SDG.index','SWB')]
+```
+
+```{r}
+get_pais<-function(df_total, g, pais){
+   x_coord<-na.omit(df_total$SDG.index[df_total$pais.glir==pais])
+   y_coord<-na.omit(df_total$SWB[df_total$pais.glir==pais])
+   
+   x_txt<-x_coord-0.3
+   y_txt<-y_coord-0.2
+   g+geom_text(label=pais,x=x_txt, y=y_txt)+
+      geom_segment(x=x_coord,y=y_coord,xend=x_txt,yend=y_txt,color="blue")
+}
+```
+
+
+```{r fig.width=10, fig.height=8,echo=FALSE}
+g<-ggplot(df_total,aes(x=SDG.index, y=SWB))+geom_point(aes(color=continente))+geom_smooth(method='lm',formula=y~x+I(x^2), color='red')+
+   xlab('Indice de desarrollo global sostenible (0-100)')+
+   ylab('Bienestar subjetivo (0-10)')
+
+for (p in paises){
+   g<-get_pais(df_total,g,p)
+}
+g
+```
+
+
+También podemos pintar las banderas en lugar de los puntos:
+```{r}
+df_total$bandera<-countrycode(df_total$pais.id, 'iso3c', 'unicode.symbol')
+g<-ggplot(df_total,aes(x=SDG.index, y=SWB))+
+   geom_smooth(method='lm',formula=y~x+I(x^2), color='red')+
+   geom_text(aes(label=bandera))+
+   xlab('Indice de desarrollo global sostenible (0-100)')+
+   ylab('Bienestar subjetivo (0-10)')+
+   theme_bw()
+g
+```
+
+
+Vamos añadir una variable más que es el PIB per capita:
+```{r}
+ggplot(df_total,aes(x=SDG.index,y=SWB))+
+   geom_point(aes(color=continente, size=gdp_per_capita))+
+   geom_smooth(method='lm',formula=y~x+I(x^2), color='red')+
+   xlab('Indice de desarrollo global sostenible (0-100)')+
+   ylab('Bienestar subjetivo (0-10)')
+```
+
+
+```{r}
+library(corrplot)
+library(RColorBrewer)
+cor_df_total<-cor(df_total[,c('SDG.index','SWB','gdp_per_capita','population')],use = "pairwise.complete.obs")
+corrplot(cor_df_total, type="upper", order="hclust",
+         col=brewer.pal(n=8, name="RdYlBu"))
+```
+
+# Librería plotly
+
+Una librería basada en widgets HTML que permite interactuar con las gráficas: https://plotly.com/
+
+Podemos crear un gráfico plotly a través de uno de ggplot:
+```{r}
+library(plotly)
+g<-ggplot(df_total,aes(x=SDG.index, y=SWB))+
+   geom_smooth(method='lm',formula=y~x+I(x^2))+
+   geom_point(aes(text=paste(pais.glir, bandera),color=continente,size=gdp_per_capita))+
+   xlab('Indice de desarrollo global sostenible (0-100)')+
+   ylab('Bienestar subjetivo (0-10)')
+fig <- ggplotly(g)
+
+fig
+```
+
+
+Podemos crear un gráfico plotly directamente. Por ejemplo un boxplot:
+```{r}
+fig <- plot_ly(df_total, x = ~SWB, color = ~continente, type = "box")
+fig
+```
+
+Intentamos repetir la gráfica de antes:
+```{r}
+fig <- plot_ly(df_total, x=~SDG.index, y = ~SWB, color = ~continente, size=~gdp_per_capita, text=~paste(pais.glir,bandera), type = "scatter")
+fig %>% layout(title='Comparación SDG y SWB',
+               xaxis=list(title='Indice de desarrollo global sostenible (0-100)'),
+               yaxis=list(title='Bienestar subjetivo (0-10)')
+               )
+   
+```
+
+
+
+
+```{r}
+fig <- plot_ly(df_total, x=~SDG.index, y = ~SWB, 
+               color = ~continente, 
+               z=~gdp_per_capita, 
+               size=~population, 
+               text=~paste(pais.glir,bandera),
+               hovertemplate = '<b>Pais:</b>%{text}<br><b>PIBpc:</b>$%{z:.0f}<br><b>Desarrollo:</b>%{x:.1f}<br><b>Bienestar:</b>%{y:.1f}<br><b>Poblacion:</b>%{marker.size}',
+               showlegend = FALSE
+               )
+fig <- fig %>% layout(title='Comparación SDG, SWB y PIB',
+               scene= list(
+                  xaxis=list(title='Indice de desarrollo global sostenible (0-100)'),
+                  yaxis=list(title='Bienestar subjetivo (0-10)'),
+                  zaxis=list(title='PIB per capita [USD]')
+               ))
+fig
+   
+```
+
+
+# Graficos 3D
+
+Vamos a ver como dibujar una función 3D con R básico:
+```{r}
+sinc3d<-function(x,y)   ifelse(x==0 & y==0, 1, sin(x^2+y^2)/(x^2+y^2))
+
+
+x <- y <- seq(-4, 4, length = 100)
+z <- outer(x, y, sinc3d)
+
+persp(x,y,z, theta=45, phi=15, col = "#FFAABB", shade = 0.01)
+```
+
+```{r}
+filled.contour(x,y,z)
+```
+
+```{r}
+library(rgl)
+persp3d(x,y,z-min(z),col = "#FFAABB",axes=FALSE,xlab="",ylab="",zlab="")
+planes3d(a=0, b=0, c=1)
+writeSTL("sinc3d.stl")
+```
+
+
+
+Con plotly en 3D (más ejemplos en: https://plotly.com/r/3d-charts/):
+```{r}
+#cross join
+df=merge(x,y,by=NULL)
+df$z<-apply(df,1,function(v) sinc3d(v['x'],v['y']))
+fig <- plot_ly(df, x=~x, y = ~y, 
+               z=~z, 
+               type="mesh3d"
+               )
+fig
+```
+

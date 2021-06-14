@@ -1,0 +1,268 @@
+---
+title: "Clasificacion"
+output: html_notebook
+---
+
+
+Vamos a ver un ejemplo de clasificación usando un dataset de clasificación de asteroides descargado de:
+https://www.kaggle.com/shrutimehta/nasa-asteroids-classification
+
+Los datos son sobre asteroides - NeoWs.
+NeoWs (Near Earth Object Web Service) es un servicio web RESTful para información de asteroides cercanos a la Tierra. Con NeoWs, un usuario puede: buscar asteroides según su fecha de aproximación más cercana a la Tierra, buscar un asteroide específico con su identificación de cuerpo pequeño JPL de la NASA, así como explorar el conjunto de datos general.
+
+Licencia:
+Este dataset se distribuye bajo la licencia CCO 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+
+
+Leemo el dataset:
+```{r}
+df_asteroids <- read.csv('../material_adicional/datasets/nasa_asteroids.csv')
+```
+
+Primero  vemos la estructura del dataset:
+```{r}
+str(df_asteroids)
+```
+
+La columna *Hazardous* nos dice si el asteroide es potencialmente peligroso o no.
+```{r}
+df_asteroids$Orbit.Determination.Date <- as.POSIXct(df_asteroids$Orbit.Determination.Date)
+df_asteroids$Close.Approach.Date <- as.POSIXct(df_asteroids$Close.Approach.Date )
+```
+
+
+Vamos a ver si existen asteroides duplicados:
+```{r}
+head(sort(table(df_asteroids$Name),decreasing=T),10)
+```
+
+```{r}
+paste("Hay",nrow(df_asteroids),"entradas para",length(unique(df_asteroids$Name)),"asteroides")
+```
+
+Comprobamos si algún asteroide tiene entradas donde tenga entradas en no peligroso y en peligroso:
+```{r}
+library(dplyr)
+df_asteroids %>% 
+  group_by(Name) %>% 
+  summarise(n_hazard=sum(Hazardous=="True"),n_tot=n()) %>% 
+  mutate(is_eq = if_else(n_hazard==0,TRUE,n_hazard==n_tot)) %>% 
+  summary()
+```
+
+
+```{r}
+id <- 3772993
+df_asteroids[df_asteroids$Name==id,]
+```
+
+Nos quedamos solo con un asteroide por nombre:
+```{r}
+df_asteroids <- df_asteroids %>% 
+  arrange(desc(Close.Approach.Date)) %>% 
+  distinct(Name, .keep_all = TRUE)
+dim(df_asteroids)
+```
+
+Borramos columnas que no necesitamos para nuestro clasificador:
+```{r}
+df_asteroids$Neo.Reference.ID<-NULL
+df_asteroids$Name <- NULL
+df_asteroids$Equinox <- NULL
+df_asteroids$Orbiting.Body <- NULL
+df_asteroids$Orbit.ID <- NULL
+df_asteroids$Epoch.Date.Close.Approach <- NULL
+```
+
+Calculo la correlación y vemos la relación entre variables:
+```{r fig.width=10, fig.height=8,echo=FALSE}
+cor_asteroides <- df_asteroids %>% dplyr::select(where(is.numeric)) %>% cor()
+library(corrplot)
+library(RColorBrewer)
+
+corrplot(cor_asteroides, type="upper", order="hclust", col=brewer.pal(n=8, name="RdYlBu"), tl.cex = 0.8)
+```
+
+Hay correlacioens perfectas que tenemos que quitar, por ejemplo las medidas en diferentes unidades:
+```{r}
+df_asteroids %>% select(starts_with("Est.Dia")) %>% cor()
+```
+
+Eliminamos las columnas que tienen una correlación superación a 0.95:
+```{r}
+library(caret)
+df_asteroids_numeric <- df_asteroids %>% dplyr::select(where(is.numeric)) 
+cor_asteroides <- df_asteroids_numeric %>% cor()
+col_to_remove = findCorrelation(cor_asteroides, cutoff=0.95) 
+
+df_asteroids_reduced = df_asteroids_numeric[,-c(col_to_remove)]
+df_asteroids_reduced$Hazardous <- df_asteroids$Hazardous 
+str(df_asteroids_reduced)
+```
+
+Observamos la correlación entre el resto de variables:
+```{r fig.width=10, fig.height=8,echo=FALSE}
+cor_asteroides_reduced <- df_asteroids_reduced %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  cor()
+corrplot(cor_asteroides_reduced, type="upper", 
+         order="hclust", col=brewer.pal(n=8, name="RdYlBu"), 
+         tl.cex = 0.8)
+```
+Vemos la cantidad de asteroides peligrosos respecto a los benignos:
+```{r}
+table(df_asteroids_reduced$Hazardous)
+```
+
+
+## Modelos
+
+### Separación train_test
+
+```{r}
+idx <- sample(1:nrow(df_asteroids_reduced), nrow(df_asteroids_reduced)*0.7)
+df_train <- df_asteroids_reduced[ idx,]
+df_test  <- df_asteroids_reduced[-idx,]
+```
+
+### Regresión logistica
+
+La regresión logística se utiliza para tareas de clasificación. Pertenece a la familia de modelos lineales generalizados y su función de enlace por defecto es la función logit:
+
+$$
+h^{-1}(p) = log \left( \frac{p}{1-p} \right)
+$$
+
+Es decir, cuando estemos trabajando con una **distribución binomial** un modelo lineal del tipo:
+
+$$
+y = \beta \vec{x}+\beta_0
+$$
+
+será:
+$$
+y = p(x) = \frac{1}{1+e^{-\beta \vec{x}-\beta_0}} 
+$$
+
+Ahora $p(x)$ es una función que muestra valores en el rango $[0,1]$, puede ser considerada como una aproximación a una probabilidad.
+
+Si generalizamos a una regresión logística múltiple tendríamos.
+
+
+$$
+    p = \frac{1}{1-e^{-\hat{Y}}}= \frac{1}{1-e^{-(\beta_1 X_1+\beta_2 X_2+\cdots +\beta_p X_p)}}   
+$$
+
+La cual se suele representar como el logaritmo de la razón de monomios:
+
+$$
+ log(Odds)= log \left(\frac{p}{1-p} \right) = \beta_1 X_1+\beta_2 X_2+\cdots +\beta_p X_p
+$$
+
+Vamos a empezar con un ejemplo muy sencillo utilizando la regresión logística:
+```{r}
+model_reglog <- glm(formula=Hazardous~., df_train, family = binomial())
+summary(model_reglog)
+```
+
+Podemos ver la matriz de confusión de training:
+```{r}
+pred_train<-predict(model_reglog, df_train)
+
+table(pred=factor(pred_train>0, labels=c("False", "True")), 
+      real=df_train$Hazardous)
+```
+
+
+
+Y compararla con la matriz de confusión de test:
+```{r}
+df_test$pred<-predict(model_reglog,df_test)
+df_test$pred_factor <- factor(df_test$pred>0, labels=c("False", "True"))
+table(pred=df_test$pred_factor, real=df_test$Hazardous)
+```
+
+```{r}
+caret::confusionMatrix(data=df_test$pred_factor, 
+                       reference=df_test$Hazardous,
+                       positive='True')
+```
+
+
+Podemos pintar la ROC:
+```{r}
+library(ROCR)
+pr <- prediction(df_test$pred, df_test$Hazardous,  label.ordering=c("False","True"))
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf, colorize=TRUE)
+```
+
+Y calcular el AUC:
+```{r}
+pr_auc<-performance(pr, measure = "auc")
+paste("AUC:",pr_auc@y.values[[1]])
+```
+
+
+## RandomForest
+
+Podemos utilizar la librería Random Forest:
+
+```{r}
+library(randomForest)
+model_rf = randomForest(Hazardous~.,data=df_train,ntree=50,importance=T)
+varImpPlot(model_rf)
+```
+
+Mostramos la matriz de confusión:
+```{r}
+df_test$pred<-predict(model_rf,newdata=df_test, type='prob')[,2]
+df_test$pred_factor <- factor(df_test$pred>0.5, labels=c("False", "True"))
+caret::confusionMatrix(data=df_test$pred_factor, reference=df_test$Hazardous)
+```
+
+```{r}
+library(ROCR)
+pr <- prediction(df_test$pred, df_test$Hazardous,  label.ordering=c("False","True"))
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf, colorize=TRUE)
+```
+```{r}
+pr_auc<-performance(pr, measure = "auc")
+paste("AUC:",pr_auc@y.values[[1]])
+```
+### XGBoost
+
+```{r}
+library(xgboost)
+matrix_train<-as.matrix(df_train[,1:15])
+label_train <- ifelse(df_train$Hazardous=="True",1,0)
+model_xgb <- xgboost(data = matrix_train, 
+                                 label = label_train, max.depth = 2, 
+                                 eta = 1, nthread = 2, nrounds = 2, 
+                                 objective = "binary:logistic")
+
+```
+
+
+
+```{r}
+df_test$pred<-predict(model_xgb,as.matrix(df_test[,1:15]))
+df_test$pred_factor <- factor(df_test$pred>0.5, labels=c("False", "True"))
+caret::confusionMatrix(data=df_test$pred_factor, reference=df_test$Hazardous)
+```
+
+```{r}
+library(ROCR)
+pr <- prediction(df_test$pred, df_test$Hazardous,  label.ordering=c("False","True"))
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf, colorize=TRUE)
+```
+
+```{r}
+pr_auc<-performance(pr, measure = "auc")
+paste("AUC:",pr_auc@y.values[[1]])
+```
+
+
+

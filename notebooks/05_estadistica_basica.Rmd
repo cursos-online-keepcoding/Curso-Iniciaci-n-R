@@ -1,0 +1,188 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+# Estadística básica
+
+
+```{r}
+library(lubridate)
+
+file_name<-'../material_adicional/datasets/actividad_deportiva.csv'
+df_activity_raw<-read.csv(file_name, stringsAsFactors = T)
+```
+
+Vamos a quedarnos con las columnas:
+Activity.Date,Activity.Name,Activity.Type,Elapsed.Time,Distance,Max.Speed,Elevation.Gain,Elevation.Low
+y a asignar la formato fecha a la columna Acticity.Date y a convertir Elapsed.Time en minutos:
+
+Dos formas de hacerlo, con R-base:
+```{r}
+df_activity<-df_activity_raw[,c('Activity.Date','Activity.Name','Activity.Type','Elapsed.Time','Distance','Max.Speed','Elevation.Gain','Elevation.Low')]
+Sys.setlocale("LC_TIME", "C")
+df_activity$Activity.Date<- as.POSIXct(df_activity$Activity.Date,tz="CET",format='%B %d, %Y, %I:%M:%S %p')
+df_activity$Elapsed.Time <- df_activity$Elapsed.Time/60
+df_activity$Dia.Semana <- as.factor(weekdays(df_activity$Activity.Date))
+```
+
+O mediante la librería dplyr del tidiverse
+
+```{r}
+library(tidyverse)
+df_activity <- df_activity_raw %>% 
+  select(Activity.Date,Activity.Name,Activity.Type,Elapsed.Time,Distance,Max.Speed,Elevation.Gain,Elevation.Low) %>%
+  mutate(Activity.Date=as.POSIXct(Activity.Date,tz="CET",format='%B %d, %Y, %H:%M:%S'),
+         Elapsed.Time=Elapsed.Time/60,
+         Dia.Semana=as.factor(weekdays(Activity.Date)))
+head(df_activity)
+
+```
+
+
+```{r}
+summary(df_activity)
+```
+
+Vamos a quedarnos con todas las filas que tengan un Activity.Name común, que el número de ocurrencias sea mayor de 5:
+```{r}
+df_activity_work <- df_activity %>% 
+  group_by(Activity.Name) %>%
+  filter( n()> 5 & !Dia.Semana %in% c('Saturday','Sunday') ) 
+```
+
+
+
+
+```{r fig.width=10, fig.height=8,echo=FALSE}
+DataExplorer::plot_correlation(df_activity_work[,c('Activity.Name','Elapsed.Time','Distance','Max.Speed','Elevation.Gain','Elevation.Low')])
+```
+
+
+
+```{r}
+DataExplorer::plot_boxplot(df_activity_work, by='Activity.Name', ncol=5,
+                           geom_boxplot_args = list("color" = "blue", outlier.color='red'))
+```
+
+Vamos a eliminar los outliers:
+```{r}
+df_activity_work_no_outlier <- df_activity_work %>% filter(Elapsed.Time<100 &
+                               Distance>7 & Distance <10)
+DataExplorer::plot_boxplot(df_activity_work_no_outlier, by='Activity.Name', ncol=5,
+                           geom_boxplot_args = list("color" = "blue", outlier.color='red'),
+                           theme_config = list(axis.text.x = ggplot2::element_text(angle = 60))
+                           )
+```
+
+
+¿Podemos juntar las categorías 'Evening Ride' y 'Afternoon Ride?
+
+Vamos a calcular las medias de cada uno de los grupos:
+```{r}
+df_activity_work_no_outlier %>% group_by(Activity.Name) %>% summarise(
+  media_distancia=mean(Distance, na.rm=T),
+  media_tiempo=mean(Elapsed.Time),
+  media_elevacion=mean(Elevation.Gain),
+  media_elevacion.min=mean(Elevation.Low),
+  media_vel=mean(Max.Speed))
+
+#df_activity_work_no_outlier %>% group_by(Activity.Name) %>% summarise(across(everything(), list(mean)))
+```
+
+
+Vamos a calcular las varianzas de cada uno de los grupos:
+```{r}
+df_activity_work_no_outlier %>% group_by(Activity.Name) %>% summarise(var(Distance),
+                                                                      var(Elapsed.Time),
+                                                                      var(Elevation.Gain),
+                                                                      var(Elevation.Low),
+                                                                      var(Max.Speed))
+```
+
+
+## Test estadísticos
+
+
+Vamos a comprobar diferentes variables a ver si se puede.
+
+
+### Elapsed.Time
+
+```{r}
+ggplot(df_activity_work_no_outlier,aes(x=Elapsed.Time, color=Activity.Name))+geom_density(bw=1)
+```
+
+Vamos a comprobar si Elapsed.Time sigue una distribución gausiana en cada uno de los grupos:
+```{r}
+ggplot(df_activity_work_no_outlier,aes(sample=Elapsed.Time, color=Activity.Name))+stat_qq()+stat_qq_line()
+```
+
+
+
+Podemos comprobar con el test de shapiro si cumplen la condición de normalidad.
+
+```{r}
+with(df_activity_work_no_outlier,shapiro.test(Elapsed.Time[Activity.Name=='Afternoon Ride']))
+with(df_activity_work_no_outlier,shapiro.test(Elapsed.Time[Activity.Name=='Evening Ride']))
+```
+
+Su pvalor es alto, como cabría esperar por el diagrama QQ, por lo que podríamos aplicar un test de student:
+```{r}
+with(df_activity_work_no_outlier,
+  t.test(Elapsed.Time[Activity.Name=='Afternoon Ride'], 
+         Elapsed.Time[Activity.Name=='Evening Ride'])
+)
+```
+El p-valor es 0.7, no podemos rechazar la hipótesis nula con confianza, así que podríamos asumir que la distancia recorrida en "Afternoon Ride" y en "Evening Ride" son la misma.
+
+
+
+Vamos a comprobar si la diferencia entre mañana y el resto de variables es estadísticamente signficcativa:
+```{r}
+with(df_activity_work_no_outlier,
+  t.test(Elapsed.Time[Activity.Name=='Morning Ride'], 
+         Elapsed.Time[Activity.Name!='Morning Ride'])
+)
+```
+El recorrido es de 12 a 15 minutos menos por la tarde.
+
+
+
+### Distancia
+```{r}
+ggplot(df_activity_work_no_outlier,aes(x=Distance, color=Activity.Name))+geom_density()
+```
+
+Vamos a comprobar si la Distancia sigue una distribución gausiana en cada uno de los grupos:
+```{r}
+ggplot(df_activity_work_no_outlier,aes(sample=Distance, color=Activity.Name))+stat_qq()+stat_qq_line()
+```
+
+
+```{r}
+with(df_activity_work_no_outlier,shapiro.test(Distance[Activity.Name=='Afternoon Ride']))
+with(df_activity_work_no_outlier,shapiro.test(Distance[Activity.Name=='Afternoon Ride']))
+```
+
+Parece dificil poder justificar el uso de t.test, aunque podríamos aplicarlo. Vamos a usar otro test estadístico que no necesita que las muestras sigan una distribución normal
+```{r}
+with(df_activity_work_no_outlier,
+  wilcox.test(Distance[Activity.Name=='Afternoon Ride'], 
+         Distance[Activity.Name=='Evening Ride'])
+)
+```
+El p-valor es 0.1319, no podemos rechazar la hipótesis nula con confianza, así que podríamos asumir que la distancia recorrida en "Afternoon Ride" y en "Evening Ride" son la misma.
+
+
+
+Vamos a comprobar si la diferencia entre mañana y el resto de variables es estadísticamente signficativa:
+```{r}
+with(df_activity_work_no_outlier,
+  wilcox.test(Distance[Activity.Name=='Morning Ride'], 
+         Distance[Activity.Name!='Morning Ride'])
+)
+```
+Aquí si que se ve una gran diferencia.
+
+
+

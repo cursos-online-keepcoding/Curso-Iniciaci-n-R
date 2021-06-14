@@ -1,0 +1,147 @@
+---
+title: "Series temporales"
+output: html_notebook
+---
+
+Vamos a analizar una serie temporal mirando el nivel del mar en Cadiz:
+https://www.psmsl.org/data/obtaining/stations/985.php
+
+
+Vamos a descargarnos los datos con resolución mensual. La descripción de los datos está en: https://www.psmsl.org/data/obtaining/notes.php
+```{r}
+nivel_mar<-read.csv('https://www.psmsl.org/data/obtaining/rlr.monthly.data/985.rlrdata', sep=';', header = F, col.names = c('fecha','nivel_mm','num_NA','atencion'))
+nivel_mar$nivel_mm[nivel_mar$nivel_mm==-99999]<-NA
+nivel_mar$fecha<-lubridate::date_decimal(nivel_mar$fecha)
+summary(nivel_mar)
+```
+
+
+
+Vamos a seguir un ejemplo extraido de:
+https://cran.r-project.org/web/packages/modeltime/vignettes/getting-started-with-modeltime.html
+de como modelas series temporales con modeltime.
+
+Otro paquete intersante para analizar series temporales sería XTS: 
+https://cran.r-project.org/web/packages/xts/vignettes/xts.pdf
+
+
+Nos vamos a centrar en modeltime. Primero vamos a cargar la librería:
+```{r}
+library(tidymodels)
+library(modeltime)
+library(tidyverse)
+library(timetk)
+```
+
+
+Mostramos la serie temporal
+```{r}
+nivel_mar %>% plot_time_series(fecha, nivel_mm, .interactive = T)
+#Equivalente a:
+#ggplot(nivel_mar,aes(x=fecha,y=nivel_mm))+geom_line()+geom_smooth()
+```
+
+### Preparado de datos
+
+Dividimos la serie temporal en dos tramos el 90% para training y el 10% restante para testing:
+```{r}
+splits <-  nivel_mar %>% initial_time_split(prop = 0.9)
+str(splits)
+```
+
+### Creación de los modelos:
+
+Vamos a probar con un modelo ARIMA:
+```{r}
+model_fit_arima <- arima_reg() %>%
+    set_engine(engine = "auto_arima") %>%
+    fit(nivel_mm ~ fecha, data = training(splits))
+```
+
+Y compararlo con un modelo prophet:
+```{r}
+model_fit_prophet <- prophet_reg(seasonality_yearly = F,
+                               seasonality_weekly = F,
+                               seasonality_daily  = F) %>%
+    set_engine(engine = "prophet") %>%
+    fit(nivel_mm ~ fecha, data = training(splits))
+```
+
+Y una regresión lineal:
+```{r}
+model_fit_lm <- linear_reg() %>%
+    set_engine("lm") %>%
+    fit(nivel_mm ~ fecha ,
+        data = training(splits))
+```
+
+### Evaluación de modelos
+```{r}
+models_tbl <- modeltime_table(
+    model_fit_arima,
+    model_fit_prophet,
+    model_fit_lm
+)
+```
+
+
+La función modeltime_calibrate nos permite calcular la predicción y residuos del dataset de testing de forma automática:
+```{r}
+calibration_tbl <- models_tbl %>%
+    modeltime_calibrate(new_data = testing(splits))
+calibration_tbl
+```
+
+
+Podemos pintar como sería la predicción en ese conjunto de testing:
+```{r}
+calibration_tbl %>%
+    modeltime_forecast(
+        new_data    = testing(splits),
+        actual_data = nivel_mar
+    ) %>%
+    plot_modeltime_forecast(
+      .legend_max_width = 25, 
+      .interactive      = T
+    )
+```
+
+
+Ver las figuras de error:
+```{r}
+calibration_tbl %>%
+    modeltime_accuracy() %>%
+    table_modeltime_accuracy(
+        .interactive = F
+    )
+```
+
+### Predicción
+
+Reentrenamos nuestros modelos con el dataframe completo para hacer predicciones más precisas:
+```{r}
+refit_tbl <- calibration_tbl %>%
+    modeltime_refit(data = nivel_mar)
+```
+
+Calculamos el nivel del mar en 50 años:
+```{r}
+nivel_mar_predicho <- refit_tbl %>% 
+  modeltime_forecast(h = "50 years", actual_data = nivel_mar)
+```
+
+```{r}
+nivel_mar_predicho %>% group_by(.model_desc) %>% arrange(.index) %>% slice_tail(n=1)
+```
+
+
+
+```{r}
+nivel_mar_predicho %>% plot_modeltime_forecast(
+      .legend_max_width = 25, # For mobile screens
+      .interactive      = T
+    )
+```
+
+
+https://datahub.io/core/sea-level-rise

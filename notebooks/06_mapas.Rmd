@@ -1,0 +1,154 @@
+---
+title: "Mapas"
+output: html_notebook
+---
+
+# Usando mapas en R
+
+Vamos a ver como integrar mapas en R.
+Más info en: https://r-spatial.org/r/2020/03/17/wkt.html
+
+
+Descargas shp: https://centrodedescargas.cnig.es/CentroDescargas/catalogo.do?Serie=NGBES
+```{r}
+library(rgdal)
+library(raster)
+file_name <- '../material_adicional/mapas/recintos_provinciales_inspire_peninbal_etrs89.shp'
+#shp_provincias<-shapefile(file_name, stringsAsFactors=T)
+shp_provincias<-readOGR(file_name,  stringsAsFactors=F)
+head(shp_provincias)
+```
+
+```{r}
+str(shp_provincias@data)
+
+```
+
+Podemos ver que sistema de coordenadas tenemos
+```{r}
+crs(shp_provincias)
+```
+
+
+Miramos las provincias que tenemos:
+```{r}
+sort(unique(shp_provincias$NAMEUNIT))
+```
+
+Vamos a calcular diferentes areas:
+```{r}
+paste("El area de España sin contar con las Canarias es",round(sum(area(shp_provincias))/1e6),"km^2")
+
+shp_zamora<-shp_provincias[shp_provincias$NAMEUNIT=="Zamora",]
+paste("El area de la provincia de Zamora es de",round(area(shp_zamora)/1e6),"km^2")
+```
+
+
+Vamos a imprimir el shape file:
+```{r}
+plot(shp_provincias)
+```
+
+```{r}
+#Por un tema de licencias para 
+#install.packages("gpclib", type="source")
+paste("Licencia ",maptools::gpclibPermit())
+df_provincias<-broom::tidy(shp_provincias, region="NAMEUNIT")
+```
+
+
+```{r}
+#df_provincias <- fortify(shp_provincias) #Deprecado
+str(df_provincias)
+```
+
+```{r}
+library(ggplot2)
+ggplot(data=df_provincias,aes(x=long,y=lat,group=group, fill=id))+geom_polygon()+theme(legend.position = "none")
+```
+
+```{r}
+shp_noasociado<-shp_provincias[shp_provincias$NAMEUNIT=="Territorio no asociado a ninguna provincia",]
+paste("Las areas de los terrenos no asociados a ninguna provincia son",round(sum(area(shp_noasociado))), "m^2")
+paste("Pertenecen a",length(shp_noasociado),"areas administrativas")
+ggplot(data=shp_noasociado,aes(x=long,y=lat,group=group))+geom_polygon()
+```
+Podemos ver los territorios son, que se corresponden con las plazas de soberanía: https://es.wikipedia.org/wiki/Plazas_de_soberan%C3%ADa_(Espa%C3%B1a)
+```{r}
+library(leaflet)
+leaflet(shp_noasociado) %>% 
+   addProviderTiles(providers$CartoDB.Positron) %>%
+   addPolygons(color = "#FF2222", weight = 1, smoothFactor = 0.5,
+    opacity = 1.0, fillOpacity = 0.95,
+    fillColor = 'red',
+    highlightOptions = highlightOptions(color = "white",fillOpacity=0.25 , 
+      bringToFront = TRUE))
+```
+
+
+Vamos a bajar información de la elevación de la península y parte de áfrica
+```{r}
+library(raster)
+library(elevatr)
+library(rgdal)
+
+df_spain<-data.frame(x=c(-10.5,4,4,-10.5),y=c(44.2,44.2,34.3,34.3))
+elev_map <-get_elev_raster(df_spain, prj='EPSG:4326',z=5, src = "aws")
+```
+
+
+
+```{r}
+plot(elev_map)
+```
+
+```{r}
+elev_iberia<-crop(elev_map,df_spain)
+plot(elev_iberia)
+```
+
+```{r}
+elev_iberia
+```
+
+
+```{r}
+library(rayshader)
+elmat_iberia = raster_to_matrix(elev_iberia)
+str(elmat_iberia)
+```
+Podemos ver la distribución de las alturas:
+```{r}
+ggplot(data.frame(x=as.vector(elmat_iberia)))+geom_histogram(aes(x=x),bins=60,color='blue',fill='#AACCFF')
+```
+
+
+
+```{r}
+water_level <- matrix(ifelse(as.vector(elmat_iberia)<0,1,0),nrow = nrow(elmat_iberia), ncol = ncol(elmat_iberia),byrow=FALSE)
+water_level <- apply(water_level, 2, rev)
+elmat_iberia %>%
+  sphere_shade(texture = "desert") %>%
+  add_water(water_level, color = "imhof1") %>%
+   add_shadow(ray_shade(elmat_iberia), 0.5) %>%
+  plot_map()
+```
+
+
+Podemos generar un fichero "STL" que podemos imprimir en nuestra impresora 3D, pero antes tenemos que exagerar un poco el terreno:
+```{r}
+elmat_iberia_sea <-  elmat_iberia
+elmat_iberia_sea[elmat_iberia_sea>=0] <- elmat_iberia_sea[elmat_iberia_sea>=0]+200
+elmat_iberia_sea[elmat_iberia_sea<0]<-0
+elmat_iberia_sea <- elmat_iberia_sea*5
+
+elmat_iberia_sea %>%
+  sphere_shade(texture = "desert") %>%
+  add_water(water_level, color = "imhof1") %>%
+  plot_3d(elmat_iberia_sea, zscale = 100, fov = 0, theta = 135, zoom = 0.75, phi = 45, windowsize = c(1000, 800))
+#save_3dprint("iberia.stl", maxwidth = 100, unit = "mm")
+#render_snapshot()
+
+```
+
+

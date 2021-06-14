@@ -1,0 +1,283 @@
+---
+title: "Funciones básicas"
+output: html_notebook
+---
+
+# Introducción 
+
+R es un lenguaje de programación funcional.
+
+Puedes hacer cualquier cosa con funciones que puedes hacer con vectores: 
+
+* asignarlo a variables
+* guardarlo en listas
+* pasarlo como argumento a otras funciones
+* crear funciones dentro de funciones 
+* devolver función como salida de otra función
+
+
+En esta sección vamos a crear funciones y describir como controlar el flujo de ejecución de una función.
+
+# Creación de funcion básica
+
+Vamos empezar a crear nuestra primera función en R:
+```{r}
+suma_a_b <- function(a,b){
+  c <- a+b
+  return(c)
+}
+```
+
+Suma dos numeros:
+```{r}
+suma_a_b(5,4)
+```
+
+# Control del flujo
+
+## If/else
+
+
+Vamos empezar a crear otra función que haga una operación en función del operador que le digamos.
+
+Por defecto usará la suma:
+```{r}
+operar_a_b <- function(a, b, operacion='suma'){
+  if (operacion=='suma'){
+    c <- a+b
+  }else if (operacion=='resta'){
+    c <- a-b
+  }else if (startsWith(operacion,'multi')){
+    c <- a*b
+  }else if (startsWith(operacion,'div')){
+    c <- a/b
+  }else{
+    c <- NA
+  }
+  c
+}
+```
+
+Podemos usar nuestra función:
+```{r}
+a<- 5
+b<- 7
+paste0("La suma de a y b es:",operar_a_b(a,b))
+paste0("La resta de a menos b es:",operar_a_b(a,b,operacion = 'resta'))
+paste0("La multiplicación de a y b es:",operar_a_b(a,b,operacion = 'multiplica'))
+paste0("La división de a entre b es:",operar_a_b(a,b,operacion = 'divide'))
+```
+
+Otra opción es con la función ifelse():
+```{r}
+suma_resta_a_b <- function(a, b, operacion='suma'){
+  ifelse(operacion=='suma', a+b, 
+         ifelse(operacion=='resta', a-b, NA)
+         )
+}
+suma_resta_a_b(a,b,operacion='suma')
+suma_resta_a_b(a,b,operacion='xxx')
+```
+
+
+
+## Bucles
+
+Vamos a crear una función que nos descarge el valor en bolsa de diferentes acciones. 
+Para ello necesitaremos importar el paquete 'quantmod'
+```{r}
+library(quantmod)
+```
+
+Si quisieramos obtener los datos de una empresa solo haríamos:
+```{r}
+start <- as.Date('2020-01-01')
+TSLA <- getSymbols('TSLA', src='yahoo', from=start, auto.assign = F)
+head(TSLA)
+```
+
+### Bucle For
+
+Queremos crear una función que, dada una lista de empresas nos calcule cual es la que mejor rendimiento ha obtenido:
+
+```{r}
+FAANGTesla <- c('FB','AMZN','AAPL', 'NFLX', 'GOOG', 'TSLA')
+```
+
+La empresa que mejor rendimiento ha obtenido desde el 1 enero de 2021 hasta hoy es:
+```{r}
+
+calcula_mejor_retorno <- function(tickers, fecha_inicio, fecha_fin=Sys.Date()){
+  mejor_rendimiento <- -Inf
+  mejor_ticker      <- NA
+  
+  for (tick in tickers){
+    xts_tick <- getSymbols(tick, src='yahoo', from=fecha_inicio, 
+                           to=fecha_fin,  auto.assign = F)
+    df_tick  <- as.data.frame(xts_tick)
+    precio_apertura_primer_dia <- df_tick[1,1]
+    precio_cierre_ajustado_ultimo_dia <- df_tick[nrow(df_tick), 6]
+    rendimiento_tick <- precio_cierre_ajustado_ultimo_dia/precio_apertura_primer_dia
+    if (rendimiento_tick > mejor_rendimiento){
+      mejor_rendimiento <- rendimiento_tick
+      mejor_ticker <- tick
+    }
+  }
+  list(ticker=mejor_ticker, rendimiento=round( (mejor_rendimiento-1)*100  ), 2)
+}
+
+
+```
+
+La empresa que mejor rendimiento obtuvo en todo 2020 fue:
+```{r}
+ret <- calcula_mejor_retorno(FAANGTesla,fecha_inicio = '2020-01-01',fecha_fin = '2020-12-31')
+paste("La empresa que mejor rendimiento obtuvo en 2020 fue",ret[["ticker"]])
+paste("La empresa que mejor rendimiento obtuvo en 2020 fue",ret$ticker)
+```
+
+La empresa que mejor rendimiento ha obtenido en 2021:
+```{r}
+ret <- calcula_mejor_retorno(FAANGTesla,fecha_inicio = '2021-01-01')
+paste("La empresa que mejor rendimiento obtuvo desde 2021-01-01 fue",ret[["ticker"]])
+```
+
+### Bucle While
+
+Igual que en otros lenguajes de programación podemos crear bucles con la función while:
+```{r}
+set.seed(4021)
+val <- 1
+while(val<5){
+  val <- runif(1, min=0, max=10)
+  print(val)
+}
+```
+
+### apply, sapply, lapply
+
+
+Existen funciones en R que nos permien ejecutar bucles de una manera más eficiente.
+* lapply(X, FUN): Recorre el vector X y devuelve una lista para cada elemento con el resultado de FUN(X)
+* sapply(X, FUN): Recorre el vector X y devuelve un vector para cada elemento con el resultado de FUN(X)
+* apply(X,MARGIN, FUN): Recorre el array/matriz/data.frame X y devuelve un vector para cada elemento con el resultado de FUN(X) a lo largo de la coordenada indicada por MARGIN
+
+Vamos a repetir el calculo del rendimiento de una empresa en bolsa en 2020:
+```{r}
+calcula_rendimiento_ticket<-function(tick, fecha_inicio, fecha_fin){
+  xts_tick<-getSymbols(tick, ticket = "yahoo", from = fecha_inicio, to=fecha_fin, auto.assign = F)
+  df_tidk<-as.data.frame(xts_tick)
+  precio_apertura_primer_dia <- df_tidk[1,1]
+  precio_cierre_ajustado_ultimo_dia <- df_tidk[nrow(df_tidk),6]
+  rendimiento_tick<-(precio_cierre_ajustado_ultimo_dia/precio_apertura_primer_dia-1)*100
+  rendimiento_tick
+}
+
+l_rendimiento<-lapply(FAANGTesla,calcula_rendimiento_ticket,'2020-01-01','2020-12-31')
+l_rendimiento
+```
+
+Puede ser más conveniente utilizar la función lapply porque el resulado queda en un vector:
+```{r}
+v_rendimiento<-sapply(FAANGTesla,calcula_rendimiento_ticket,'2020-01-01','2020-12-31')
+```
+y podemos ver fácilmente cual es el máximo:
+```{r}
+paste0("El máximo retorno fue:",round(max(v_rendimiento),2),"% de la empresa:",names(v_rendimiento)[which.max(v_rendimiento)])
+```
+También podemos usar la función *apply* sobre dataframes:
+
+Vamos a calcular el IMC de diferentes superheroes del universo DC y Marvel.
+
+```{r}
+library(tibble)
+df_superheroes=tribble(~nombre,~peso_kg,~altura_pies,~editorial,
+           'Batman',95,'6\'2\"','DC',
+           'Superman',107,'6\'3\"','DC',
+           'Wonder woman',75,'6\'','DC',
+           'Iron Man',102,'6\'1\"','Marvel',
+           'Capitana Marvel', 56.25, '5\'11\"', 'Marvel',
+           'Capitán America', 108, '6\'2\"', 'Marvel')
+
+```
+
+Primero vamos a calcular su IMC:
+```{r}
+calcula_metros<-function(row){
+  altura<-row["altura_pies"]
+  peso<-as.numeric(row["peso_kg"])
+  pies <- substring(altura, 1, regexpr('\'',altura)-1 )
+  pulgadas <- substring(altura, regexpr('\'',altura)+1, regexpr('\"',altura)-1 )
+  pulgadas <- ifelse(pulgadas=='','0',pulgadas)
+  metros <- as.numeric(pies)*0.3048 + as.numeric(pulgadas)*0.0254
+  imc<-round(peso/metros^2,1)
+  val=ifelse(imc<18.5,'Bajo peso',
+      ifelse(imc<25,'Normal',
+      ifelse(imc<30,'sobrepeso',
+                  'obesidad')))
+  return(c(imc=imc,observaciones=val))
+}
+(df_superheroes_imc <-cbind(df_superheroes, t(apply(df_superheroes,1,calcula_metros))))
+```
+
+Podemos calcular el peso medio en función de la editorial:
+```{r}
+l_superheroes<-split(df_superheroes_imc,df_superheroes_imc$editorial)
+mean(l_superheroes[["DC"]]$peso_kg)
+mean(l_superheroes[["Marvel"]]$peso_kg)
+```
+
+O podríamos incluso hacerlo en función del sexo:
+```{r}
+l_superheroes<-split(df_superheroes_imc,c('H','H','M','H','M','H'))
+summary(l_superheroes[["H"]])
+summary(l_superheroes[["M"]])
+```
+
+
+
+
+# Creación de scripts 
+
+
+Vamos a calcular el número de dias consecutivos de cierres positivos (respecto al cierre anterior) que ha tenido un valor en bolsa dado.
+
+
+Como estas funciones son complejas vamos a escribirlas en un script R y cargarlas en memoria:
+```{r}
+source('02_funciones_basicas_material_apoyo.R')
+```
+
+Obtenemos el precio de cierre:
+```{r}
+precio_cierre_ajustado<-obtener_precio_cierre_ajustado('TSLA',fecha_inicio = '2020-01-01',fecha_fin = '2020-12-31')
+```
+
+Primera función de prueba:
+```{r}
+calcula_maximos_dias_retorno_positivo(precio_cierre_ajustado)
+```
+
+Segunda función de prueba:
+```{r}
+calcula_maximos_dias_retorno_positivo_diff(precio_cierre_ajustado)
+```
+
+## Profiling
+```{r}
+library(microbenchmark)
+mb<-microbenchmark(calcula_maximos_dias_retorno_positivo(precio_cierre_ajustado),times=10000)
+mb
+```
+
+```{r}
+(mb_diff<-microbenchmark(calcula_maximos_dias_retorno_positivo_diff(precio_cierre_ajustado),times=10000))
+```
+
+# Ejemplo de aplicación
+
+Vamos a ver un ejemplo de una aplicación sencilla, el juego de la 7 y media:
+```{r}
+source('../apps/sieteymedia.R')
+```
+
